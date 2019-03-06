@@ -3,23 +3,15 @@
 #include <linux/fs.h>
 #include <linux/semaphore.h>
 #include <linux/cdev.h>
-#include <asm/uaccess.h>			// copy_to_user(), copy_from_user()
+#include <linux/uaccess.h>			// copy_to_user(), copy_from_user()
 
 static int major;
 struct cdev *kernel_cdev;			// Kernel monitoring of the device
 
-struct device {
+struct device_ {
 	char disk[100];
 	struct semaphore sem;
 } char_arr;
-
-// Pointers to various file-operations on 'char_device'
-struct file_operations fops = {
-	read:	 char_read,
-	write:	 char_write,
-	open:	 char_open,
-	release: char_release
-};
 
 static int char_open(struct inode *inode, struct file *filp)
 {
@@ -33,7 +25,7 @@ static int char_open(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-static int release(struct inode *inode, struct file* filp) {
+static int char_release(struct inode *inode, struct file* filp) {
 	printk(KERN_NOTICE "Inside release() function\n");
 	printk(KERN_INFO "Releasing semaphore");
 	up(&char_arr.sem);
@@ -56,11 +48,25 @@ static ssize_t char_write(struct file *filp, const char *buff, size_t count, lof
 	return ret;
 }
 
+// Pointers to various file-operations on 'char_device'
+struct file_operations fops = {
+	read:	 char_read,
+	write:	 char_write,
+	open:	 char_open,
+	release: char_release
+};
+
+
 static int __init char_init(void)
 {
 	int ret;
 	dev_t devno, dev_r;
 	printk(KERN_INFO "Initiating init module");
+
+	// Allocate file-operations to cdev structure
+	kernel_cdev = cdev_alloc();
+	kernel_cdev->ops = &fops;
+	kernel_cdev->owner = THIS_MODULE;
 
 	if ((ret = alloc_chrdev_region(&devno, 0, 1, "char_device")) < 0) {
 		printk(KERN_INFO "Major number allocation failed");
@@ -70,11 +76,6 @@ static int __init char_init(void)
 	major = MAJOR(devno);
 	printk(KERN_INFO "The major number is %d", MAJOR(devno));
 	dev_r = MKDEV(major, 0);
-
-	// Allocate file-operations to cdev structure
-	kernel_cdev = cdev_alloc();
-	kernel_cdev->ops = &fops;
-	kernel_cdev->owner = THIS_MODULE;
 
 	if ((ret = cdev_add(kernel_cdev, dev_r, 1)) < 0) {
 		printk(KERN_INFO "Unable to inform kernel about cdev");
@@ -90,7 +91,7 @@ static void __exit char_exit(void)
 {
 	printk(KERN_INFO "Initiating cleanup module");
 	cdev_del(kernel_cdev);
-	unregister_chrdev_region(devno, 1);
+	unregister_chrdev_region(major, 1);
 }
 
 module_init(char_init);
