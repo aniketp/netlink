@@ -13,6 +13,48 @@ struct device {
 	struct semaphore sem;
 } char_arr;
 
+// Pointers to various file-operations on 'char_device'
+struct file_operations fops = {
+	read:	 char_read,
+	write:	 char_write,
+	open:	 char_open,
+	release: char_release
+};
+
+static int char_open(struct inode *inode, struct file *filp)
+{
+	printk(KERN_NOTICE "Inside open() function");
+	
+	// Disallow multiple processes to open() char device simultaneously
+	if (down_interruptible(&char_arr.sem)) {
+		printk(KERN_INFO "Could not hold the device semaphore");
+		return -1;
+	}
+	return 0;
+}
+
+static int release(struct inode *inode, struct file* filp) {
+	printk(KERN_NOTICE "Inside release() function\n");
+	printk(KERN_INFO "Releasing semaphore");
+	up(&char_arr.sem);
+	return 0;
+}
+
+static ssize_t char_read(struct file *filp, char *buff, size_t count, loff_t *offset)
+{
+	unsigned long ret;
+	printk(KERN_NOTICE "Inside read() function");
+	ret = copy_to_user(buff, char_arr.disk, count);
+	return ret;
+}
+
+static ssize_t char_write(struct file *filp, const char *buff, size_t count, loff_t *offset)
+{
+	unsigned long ret;
+	printk(KERN_NOTICE "Inside write() function");
+	ret = copy_from_user(char_arr.disk, buff, count);
+	return ret;
+}
 
 static int __init char_init(void)
 {
