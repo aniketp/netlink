@@ -6,6 +6,7 @@
 #include <linux/uaccess.h>			// copy_to_user(), copy_from_user()
 
 static int major;
+dev_t devno, dev_r;
 struct cdev *kernel_cdev;			// Kernel monitoring of the device
 
 struct device_ {
@@ -25,7 +26,8 @@ static int char_open(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-static int char_release(struct inode *inode, struct file* filp) {
+static int char_release(struct inode *inode, struct file* filp)
+{
 	printk(KERN_NOTICE "Inside release() function\n");
 	printk(KERN_INFO "Releasing semaphore");
 	up(&char_arr.sem);
@@ -45,7 +47,7 @@ static ssize_t char_write(struct file *filp, const char *buff, size_t count, lof
 	unsigned long ret;
 	printk(KERN_NOTICE "Inside write() function");
 	ret = copy_from_user(char_arr.disk, buff, count);
-	return ret;
+	return count;
 }
 
 // Pointers to various file-operations on 'char_device'
@@ -60,13 +62,12 @@ struct file_operations fops = {
 static int __init char_init(void)
 {
 	int ret;
-	dev_t devno, dev_r;
-	printk(KERN_INFO "Initiating init module");
 
 	// Allocate file-operations to cdev structure
 	kernel_cdev = cdev_alloc();
 	kernel_cdev->ops = &fops;
 	kernel_cdev->owner = THIS_MODULE;
+	printk(KERN_INFO "Initiating init module");
 
 	if ((ret = alloc_chrdev_region(&devno, 0, 1, "char_device")) < 0) {
 		printk(KERN_INFO "Major number allocation failed");
@@ -74,16 +75,15 @@ static int __init char_init(void)
 	}
 
 	major = MAJOR(devno);
-	printk(KERN_INFO "The major number is %d", MAJOR(devno));
 	dev_r = MKDEV(major, 0);
+	// Initialize device semaphore
+	sema_init(&char_arr.sem, 1);
+	printk("The major number is %d", MAJOR(devno));
 
 	if ((ret = cdev_add(kernel_cdev, dev_r, 1)) < 0) {
 		printk(KERN_INFO "Unable to inform kernel about cdev");
 		return ret;
 	}
-
-	// Initialize device semaphore
-	sema_init(&char_arr.sem, 1);
 	return 0;
 }
 
@@ -94,5 +94,6 @@ static void __exit char_exit(void)
 	unregister_chrdev_region(major, 1);
 }
 
+MODULE_LICENSE("GPL");
 module_init(char_init);
 module_exit(char_exit);
